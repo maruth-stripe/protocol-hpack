@@ -121,6 +121,7 @@ module Protocol
 				@table_size = table_size
 				
 				@table = (table&.dup) || []
+				@cursize = current_table_size
 			end
 			
 			def initialize_copy(other)
@@ -299,10 +300,14 @@ module Protocol
 			# Returns current table size in octets
 			# @return [Integer]
 			def current_table_size
-				@table.inject(0) {|r, (k, v)| r + k.bytesize + v.bytesize + 32}
+				@table.inject(0) { |r, e| entry_size(e) }
 			end
 
 			private
+
+			def entry_size(entry)
+				entry[0].bytesize + entry[1].bytesize + 32
+			end
 
 			# Add a name-value pair to the dynamic table. Older entries might have been evicted so that the new entry fits in the dynamic table. The command and the component strings will be frozen.
 			#
@@ -314,6 +319,7 @@ module Protocol
 				command.freeze
 				
 				@table.unshift(command)
+				@cursize += entry_size(command)
 			end
 
 			# To keep the dynamic table size lower than or equal to @table_size,
@@ -322,14 +328,13 @@ module Protocol
 			# @param command [Hash]
 			# @return [Boolean] whether +command+ fits in the dynamic table.
 			def size_check(command)
-				cursize = current_table_size
 				cmdsize = command.nil? ? 0 : command[0].bytesize + command[1].bytesize + 32
 
-				while cursize + cmdsize > @table_size
+				while @cursize + cmdsize > @table_size
 					break if @table.empty?
 
 					e = @table.pop
-					cursize -= e[0].bytesize + e[1].bytesize + 32
+					@cursize -= entry_size(e)
 				end
 
 				cmdsize <= @table_size
